@@ -1,0 +1,8 @@
+name: kote
+version: '1.0-SNAPSHOT'
+main: io.github.naruFist.kote.KotePlugin
+api-version: '1.21'
+commands:
+  kote:
+    description: kote 스크립트 제어 명령어
+    usage: /kote reload
