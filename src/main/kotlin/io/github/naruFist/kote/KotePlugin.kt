@@ -1,6 +1,8 @@
 package io.github.naruFist.kote
 
+import io.github.naruFist.kape2.Kape
 import org.bukkit.plugin.java.JavaPlugin
+import org.yaml.snakeyaml.Yaml
 import java.io.File
 import java.net.URI
 import java.net.URL
@@ -10,10 +12,13 @@ import kotlin.script.experimental.api.ScriptAcceptedLocation
 import kotlin.script.experimental.api.ScriptCompilationConfiguration
 import kotlin.script.experimental.api.ScriptEvaluationConfiguration
 import kotlin.script.experimental.api.acceptedLocations
+import kotlin.script.experimental.api.defaultImports
 import kotlin.script.experimental.api.ide
+import kotlin.script.experimental.api.implicitReceivers
 import kotlin.script.experimental.host.toScriptSource
 import kotlin.script.experimental.jvm.baseClassLoader
 import kotlin.script.experimental.jvm.dependenciesFromClassContext
+import kotlin.script.experimental.jvm.dependenciesFromCurrentContext
 import kotlin.script.experimental.jvm.jvm
 import kotlin.script.experimental.jvmhost.BasicJvmScriptingHost
 
@@ -21,11 +26,22 @@ class KotePlugin : JavaPlugin() {
 
     private val scriptsDir = File(dataFolder, "scripts")
     private val libsDir = File(dataFolder, "libs")
+    private val defaultImportsFile = File(dataFolder, "default-import.yml")
+
     private val host = BasicJvmScriptingHost()
 
     override fun onEnable() {
+        Kape.plugin = this
+
         if (!scriptsDir.exists()) scriptsDir.mkdirs()
         if (!libsDir.exists()) libsDir.mkdirs()
+        if (!defaultImportsFile.exists()) defaultImportsFile.writeText(
+            """
+            # 기본 import 예제
+            - "org.bukkit.*"
+            - "io.github.naruFist.kape2.*"
+            """.trimIndent()
+        )
 
         logger.info("kote 스크립트를 로드 중입니다...")
         loadAllScripts()
@@ -35,6 +51,17 @@ class KotePlugin : JavaPlugin() {
             val command = KoteCommand(this@KotePlugin)
             setExecutor(command)
             tabCompleter = command
+        }
+    }
+
+    private fun loadDefaultImports(): List<String> {
+        return try {
+            val yaml = Yaml()
+            val data = yaml.load<List<String>>(defaultImportsFile.inputStream())
+            data ?: emptyList()
+        } catch (e: Exception) {
+            logger.warning("⚠️ defaultImports.yml 읽기 실패: ${e.message}")
+            emptyList()
         }
     }
 
@@ -77,6 +104,7 @@ class KotePlugin : JavaPlugin() {
 
     fun loadAllScripts() {
         val ktsFiles = scriptsDir.listFiles { f -> f.extension == "kts" } ?: return
+        val defaultImports = loadDefaultImports()
 
         // 순환 참조 방지용 캐시
         val loaded = mutableSetOf<String>()
@@ -118,20 +146,7 @@ class KotePlugin : JavaPlugin() {
             if (!file.exists() || file.name in loaded) return
             loaded.add(file.name)
 
-            // 먼저 imports 처리 (unchanged)
-            val lines = file.readLines()
-            val imports = lines.filter { it.trim().startsWith("@file:Import(") }
-            for (imp in imports) {
-                val imported = imp.substringAfter("(")
-                    .substringBefore(")")
-                    .trim('"', ' ', '\'')
-                val importedFile = File(scriptsDir, imported)
-                if (importedFile.exists()) {
-                    evalFile(importedFile)
-                } else {
-                    logger.warning("⚠️  ${file.name}에서 ${imported}를 찾을 수 없습니다.")
-                }
-            }
+            // 먼저 imports 처리 (unchanged
 
             // JitPack 의존성 다운로드 후 그 파일들 URL도 포함시키려면 loadDependencies(file) 호출해서 libsDir에 파일을 넣어놔야 함
             val depUrls = loadDependencies(file) // 기존 함수 사용, libsDir에 jar들을 만든다
@@ -148,7 +163,10 @@ class KotePlugin : JavaPlugin() {
                 jvm {
                     // 플러그인(및 그 의존성) 기반으로 컴파일 classpath 확보
                     dependenciesFromClassContext(KotePlugin::class, wholeClasspath = true)
+                    dependenciesFromCurrentContext(wholeClasspath = true)
                 }
+                defaultImports(*defaultImports.toTypedArray())
+                implicitReceivers(ScriptShared::class) // 변수, 함수 공유
                 ide { acceptedLocations(ScriptAcceptedLocation.Everywhere) }
             }
 
@@ -179,3 +197,5 @@ class KotePlugin : JavaPlugin() {
         ktsFiles.forEach(::evalFile)
     }
 }
+
+object ScriptShared

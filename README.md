@@ -5,13 +5,19 @@ _kotlin + note_ : write plugin with kotlin. like note
 [![kotlin](https://img.shields.io/badge/kotlin-2.2.21-585DEF.svg?logo=kotlin)](http://kotlinlang.org)
 [![gradle](https://img.shields.io/badge/gradle-8.8-02303A.svg?logo=gradle)](https://gradle.org)
 
+
+
 ## how to use?
 
 plugins/kote/scripts ~> (fileName).kts
 
+kote does provide [_**kape2**_](https://github.com/naruFist/kape2)
+
 \# example.kts
 ```kts
 println("Hello, World!")
+
+Kape.plugin.logger.info("[kote] providing kape2")
 ```
 
 \# result
@@ -19,10 +25,11 @@ println("Hello, World!")
 ```console
 [kote] Loading Scripts...
 Hello, World!
+kote providing kape2
 [kote] Loaded Scripts!
 ```
 
-## Usage of `@file:Import`, `@file:DependsOn`
+## Usage of `@file:DependsOn`
 
 - **Not tested yet**
 - **To be uploaded later**
