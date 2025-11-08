@@ -1,6 +1,7 @@
 package io.github.naruFist.kote
 
 import io.github.naruFist.kape2.Kape
+import org.bukkit.event.HandlerList
 import org.bukkit.plugin.java.JavaPlugin
 import org.yaml.snakeyaml.Yaml
 import java.io.File
@@ -14,11 +15,9 @@ import kotlin.script.experimental.api.ScriptEvaluationConfiguration
 import kotlin.script.experimental.api.acceptedLocations
 import kotlin.script.experimental.api.defaultImports
 import kotlin.script.experimental.api.ide
-import kotlin.script.experimental.api.implicitReceivers
 import kotlin.script.experimental.host.toScriptSource
 import kotlin.script.experimental.jvm.baseClassLoader
 import kotlin.script.experimental.jvm.dependenciesFromClassContext
-import kotlin.script.experimental.jvm.dependenciesFromCurrentContext
 import kotlin.script.experimental.jvm.jvm
 import kotlin.script.experimental.jvmhost.BasicJvmScriptingHost
 
@@ -53,6 +52,38 @@ class KotePlugin : JavaPlugin() {
             tabCompleter = command
         }
     }
+
+    override fun onDisable() {
+        logger.info("kote 스크립트 리스너 및 태스크 정리 중...")
+        unloadAllScripts()
+
+        Kape.disable()
+
+        logger.info("kote 비활성화 완료 ✅")
+    }
+
+    internal fun reload() {
+        unloadAllScripts()
+        loadAllScripts()
+    }
+
+
+    private fun unloadAllScripts() {
+        // 1. 이벤트 리스너 해제
+        ScriptHelper.activeListeners.forEach { listener ->
+            HandlerList.unregisterAll(listener)
+        }
+        ScriptHelper.activeListeners.clear()
+
+        // 2. 스케줄러 태스크 해제
+        ScriptHelper.activeTasks.forEach { task ->
+            task.cancel()
+        }
+        ScriptHelper.activeTasks.clear()
+
+        logger.info("정리 완료: 리스너 ${ScriptHelper.activeListeners.size}개, 태스크 ${ScriptHelper.activeTasks.size}개 해제.")
+    }
+
 
     private fun loadDefaultImports(): List<String> {
         return try {
@@ -102,7 +133,7 @@ class KotePlugin : JavaPlugin() {
         return urls
     }
 
-    fun loadAllScripts() {
+    private fun loadAllScripts() {
         val ktsFiles = scriptsDir.listFiles { f -> f.extension == "kts" } ?: return
         val defaultImports = loadDefaultImports()
 
@@ -162,11 +193,10 @@ class KotePlugin : JavaPlugin() {
             val compilationConfig = ScriptCompilationConfiguration {
                 jvm {
                     // 플러그인(및 그 의존성) 기반으로 컴파일 classpath 확보
-                    dependenciesFromClassContext(KotePlugin::class, wholeClasspath = true)
-                    dependenciesFromCurrentContext(wholeClasspath = true)
+                    dependenciesFromClassContext(ScriptHelper::class, wholeClasspath = true)
                 }
                 defaultImports(*defaultImports.toTypedArray())
-                implicitReceivers(ScriptShared::class) // 변수, 함수 공유
+
                 ide { acceptedLocations(ScriptAcceptedLocation.Everywhere) }
             }
 
@@ -197,5 +227,3 @@ class KotePlugin : JavaPlugin() {
         ktsFiles.forEach(::evalFile)
     }
 }
-
-object ScriptShared

@@ -17,7 +17,7 @@ class KoteCommand(val plugin: KotePlugin): CommandExecutor, TabCompleter {
         if (command.name.equals("kote", ignoreCase = true)) {
             if (args.isNotEmpty() && args[0].equals("reload", ignoreCase = true)) {
                 sender.sendMessage(text("[kote] 스크립트를 다시 불러옵니다...", Color.GREEN))
-                plugin.loadAllScripts()
+                plugin.reload()
                 sender.sendMessage(text("[kote] 다시 불러오기 완료!", Color.GREEN))
                 return true
             }

@@ -18,7 +18,7 @@ repositories {
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT")
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
-    implementation("com.github.naruFist:kape2:0.0.4")
+    implementation("com.github.naruFist:kape2:0.0.5")
 
     implementation(kotlin("script-runtime"))
     implementation("org.jetbrains.kotlin:kotlin-scripting-common")
