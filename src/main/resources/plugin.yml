@@ -1,5 +1,5 @@
 name: kote
-version: '1.0-SNAPSHOT'
+version: '1.0'
 main: io.github.naruFist.kote.KotePlugin
 api-version: '1.21'
 commands:

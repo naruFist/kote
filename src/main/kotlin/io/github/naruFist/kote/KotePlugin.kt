@@ -1,6 +1,7 @@
 package io.github.naruFist.kote
 
 import io.github.naruFist.kape2.Kape
+import org.bukkit.Bukkit
 import org.bukkit.event.HandlerList
 import org.bukkit.plugin.java.JavaPlugin
 import org.yaml.snakeyaml.Yaml
@@ -17,8 +18,9 @@ import kotlin.script.experimental.api.defaultImports
 import kotlin.script.experimental.api.ide
 import kotlin.script.experimental.host.toScriptSource
 import kotlin.script.experimental.jvm.baseClassLoader
-import kotlin.script.experimental.jvm.dependenciesFromClassContext
 import kotlin.script.experimental.jvm.jvm
+import kotlin.script.experimental.jvm.jvmTarget
+import kotlin.script.experimental.jvm.updateClasspath
 import kotlin.script.experimental.jvmhost.BasicJvmScriptingHost
 
 class KotePlugin : JavaPlugin() {
@@ -69,19 +71,8 @@ class KotePlugin : JavaPlugin() {
 
 
     private fun unloadAllScripts() {
-        // 1. 이벤트 리스너 해제
-        ScriptHelper.activeListeners.forEach { listener ->
-            HandlerList.unregisterAll(listener)
-        }
-        ScriptHelper.activeListeners.clear()
-
-        // 2. 스케줄러 태스크 해제
-        ScriptHelper.activeTasks.forEach { task ->
-            task.cancel()
-        }
-        ScriptHelper.activeTasks.clear()
-
-        logger.info("정리 완료: 리스너 ${ScriptHelper.activeListeners.size}개, 태스크 ${ScriptHelper.activeTasks.size}개 해제.")
+        HandlerList.unregisterAll(this)
+        server.scheduler.cancelTasks(this)
     }
 
 
@@ -122,7 +113,7 @@ class KotePlugin : JavaPlugin() {
                         }
                         logger.info("✅ 다운로드 완료: ${file.name}")
                     } catch (e: Exception) {
-                        logger.warning("⚠️  $dep 다운로드 실패: ${e.message}")
+                        logger.warning("⚠️ $dep 다운로드 실패: ${e.message}")
                     }
                 }
 
@@ -133,85 +124,106 @@ class KotePlugin : JavaPlugin() {
         return urls
     }
 
+
+    private fun getCoreClasspathUrls(): Set<URL> {
+        val urls = mutableSetOf<URL>()
+        try {
+            // 1) 이 플러그인 JAR (Kape2, KoteProvide 등 포함)
+            urls += KotePlugin::class.java.protectionDomain.codeSource.location
+
+            // 2) Paper API JAR (Bukkit 클래스 기준)
+            urls += Bukkit::class.java.protectionDomain.codeSource.location
+
+            // 3) Adventure API JARs (Namespaced, ForwardingAudience 문제 해결)
+            urls += net.kyori.adventure.audience.Audience::class.java.protectionDomain.codeSource.location
+            urls += net.kyori.adventure.key.Key::class.java.protectionDomain.codeSource.location
+
+            // 4) Kotlin Stdlib JAR (실행 안정성 확보)
+
+            // 5) ⭐️⭐️⭐️ 현재 스레드/시스템 클래스로더의 모든 URL 추가 (핵심 수정) ⭐️⭐️⭐️
+            // Kotlin 스크립팅 JAR 파일들이 여기에 포함될 가능성이 높습니다.
+            val currentCl = Thread.currentThread().contextClassLoader
+            if (currentCl is URLClassLoader) {
+                urls.addAll(currentCl.urLs)
+            }
+
+            // 6) ⭐️⭐️⭐️ 플러그인 부모(서버) 클래스로더의 URL 추가 ⭐️⭐️⭐️
+            val parentCl = server::class.java.classLoader
+            if (parentCl is URLClassLoader) {
+                urls.addAll(parentCl.urLs)
+            }
+
+        } catch (e: Exception) {
+            logger.severe("❌ 코어 클래스패스 URL 수집 중 치명적인 오류 발생: ${e.message}")
+        }
+        return urls
+    }
+
+
     private fun loadAllScripts() {
         val ktsFiles = scriptsDir.listFiles { f -> f.extension == "kts" } ?: return
+        // ⚠️ defaultImports는 이전 답변에서처럼 핵심 클래스 목록으로 명시되어야 합니다.
         val defaultImports = loadDefaultImports()
 
-        // 순환 참조 방지용 캐시
         val loaded = mutableSetOf<String>()
-
-        // helper: 현재 플러그인 + kotlin stdlib + libs 폴더의 JAR들을 URL로 수집
-        fun buildClassLoaderForScript(): URLClassLoader {
-            val urls = mutableListOf<URL>()
-
-            // 1) 플러그인 JAR (this plugin)
-            runCatching {
-                val pluginJar = javaClass.protectionDomain.codeSource.location.toURI().toURL()
-                urls += pluginJar
-            }
-
-            // 2) kotlin stdlib 위치 (kotlin.Unit 클래스로 찾음)
-            runCatching {
-                val kotlinStdlibUrl = Unit::class.java.protectionDomain.codeSource.location.toURI().toURL()
-                urls += kotlinStdlibUrl
-            }
-
-            // 3) script-runtime / scripting jars (있다면 부모 classloader에서 가져오기)
-            val ctx = Thread.currentThread().contextClassLoader
-            if (ctx is URLClassLoader) {
-                urls += ctx.urLs // 추가로, 부모 CL에 있는 라이브러리들도 포함 (중복은 무시됨)
-            }
-
-            // 4) 또한 plugins/<this>/libs 에 다운로드된 jars 추가
-            if (libsDir.exists()) {
-                libsDir.listFiles { f -> f.extension == "jar" }?.forEach { f ->
-                    urls += f.toURI().toURL()
-                }
-            }
-
-            // URLClassLoader 생성 (부모는 plugin classloader)
-            return URLClassLoader(urls.toTypedArray(), javaClass.classLoader)
-        }
+        val coreUrls = getCoreClasspathUrls() // 필수 JAR URL 목록
 
         fun evalFile(file: File) {
             if (!file.exists() || file.name in loaded) return
             loaded.add(file.name)
 
-            // 먼저 imports 처리 (unchanged
+            // 1. 스크립트별 의존성 다운로드 (libsDir에 저장)
+            loadDependencies(file)
 
-            // JitPack 의존성 다운로드 후 그 파일들 URL도 포함시키려면 loadDependencies(file) 호출해서 libsDir에 파일을 넣어놔야 함
-            val depUrls = loadDependencies(file) // 기존 함수 사용, libsDir에 jar들을 만든다
+            // 2. /libs 폴더의 모든 JAR URL 수집
+            val libUrls = libsDir.listFiles { f -> f.extension == "jar" }
+                ?.map { it.toURI().toURL() }
+                ?.toSet() ?: emptySet()
 
-            // 여기서 custom classloader 생성
-            val combinedClassLoader = buildClassLoaderForScript()
+            // 3. 전체 URL 목록 결합
+            val allUrls = (coreUrls + libUrls).toTypedArray()
 
-            // 만약 depUrls가 있으면 새로운 classloader에 추가 (URLClassLoader chaining)
-            val allUrls = combinedClassLoader.urLs + depUrls.toTypedArray()
-            val scriptClassLoader = URLClassLoader(allUrls, javaClass.classLoader)
+            // 4. 컴파일러가 사용할 File 목록 (jrt:/... 같은 URI는 제외)
+            val allFiles = allUrls.mapNotNull {
+                try {
+                    // URL을 File로 변환, 실패하면 null
+                    if (it.protocol == "file") File(it.toURI()) else null
+                } catch (e: Exception) {
+                    null
+                }
+            }
 
-            // --- 컴파일/평가 설정 ---
+            // 5. 런타임에 사용할 ClassLoader (서버 CL을 부모로)
+            val scriptClassLoader = URLClassLoader(allUrls, KotePlugin::class.java.classLoader)
+
+            // --- 컴파일 설정 ---
             val compilationConfig = ScriptCompilationConfiguration {
                 jvm {
-                    // 플러그인(및 그 의존성) 기반으로 컴파일 classpath 확보
-                    dependenciesFromClassContext(ScriptHelper::class, wholeClasspath = true)
+                    jvmTarget("21")
+                    // ⭐️ 핵심 변경: 명시적 클래스패스 사용 (가장 안정적)
+                    updateClasspath(allFiles)
                 }
                 defaultImports(*defaultImports.toTypedArray())
 
                 ide { acceptedLocations(ScriptAcceptedLocation.Everywhere) }
             }
 
+            // --- 평가 설정 ---
             val evaluationConfig = ScriptEvaluationConfiguration {
+                // ⭐️ 런타임에도 방금 만든 클래스로더를 사용
                 jvm { baseClassLoader(scriptClassLoader) }
             }
 
             // 실행
             try {
                 logger.info("▶ 실행 중: ${file.name}")
+                // 간단한 println()이 안 되는 경우, 여기에 도달하지 못했거나 eval 내부 오류입니다.
                 val result = host.eval(file.toScriptSource(), compilationConfig, evaluationConfig)
 
                 when (result) {
                     is ResultWithDiagnostics.Success -> {
                         logger.info("✅ ${file.name} 실행 성공")
+                        // 스크립트 실행이 성공하면, println("??")의 결과는 콘솔에 나타나야 합니다.
                     }
                     is ResultWithDiagnostics.Failure -> {
                         val errorMsg = result.reports.joinToString("\n") { it.message }
@@ -219,7 +231,8 @@ class KotePlugin : JavaPlugin() {
                     }
                 }
             } catch (e: Exception) {
-                logger.severe("❌ ${file.name} 실행 중 오류 발생: ${e.message}")
+                // 이 블록은 eval 호출 자체가 실패한 경우입니다. (매우 심각한 초기화 오류)
+                logger.severe("❌ ${file.name} 실행 중 치명적인 오류 발생: ${e.message}")
                 e.printStackTrace()
             }
         }
