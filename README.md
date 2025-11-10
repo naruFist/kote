@@ -18,6 +18,10 @@ kote does provide [_**kape2**_](https://github.com/naruFist/kape2)
 println("Hello, World!")
 
 Kape.plugin.logger.info("[kote] providing kape2")
+
+Kape.listener<PlayerJoinEvent> { event ->
+    event.player.sendMessage(text("Hello, Kote!", Color.AQUA))
+}
 ```
 
 \# result
@@ -26,6 +30,7 @@ Kape.plugin.logger.info("[kote] providing kape2")
 [kote] Loading Scripts...
 Hello, World!
 kote providing kape2
+(..Listener Activated..)
 [kote] Loaded Scripts!
 ```
 

@@ -41,6 +41,7 @@ class KotePlugin : JavaPlugin() {
             # 기본 import 예제
             - "org.bukkit.*"
             - "io.github.naruFist.kape2.*"
+            - "io.github.naruFist.kote.Kote"
             """.trimIndent()
         )
 
