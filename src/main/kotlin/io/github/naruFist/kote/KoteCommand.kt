@@ -7,7 +7,7 @@ import org.bukkit.command.CommandExecutor
 import org.bukkit.command.CommandSender
 import org.bukkit.command.TabCompleter
 
-class KoteCommand(val plugin: KotePlugin): CommandExecutor, TabCompleter {
+internal class KoteCommand(val plugin: KotePlugin): CommandExecutor, TabCompleter {
     override fun onCommand(
         sender: CommandSender,
         command: Command,

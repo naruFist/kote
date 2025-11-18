@@ -34,7 +34,29 @@ kote providing kape2
 [kote] Loaded Scripts!
 ```
 
-## Usage of `@file:DependsOn`
+## settings
+### 1. `classpath.yml`
+`plugins/kote/libs/`: add [paper-api.jar](https://artifactory.papermc.io/artifactory/universe/io/papermc/paper/paper-api/1.21.8-R0.1-SNAPSHOT/paper-api-1.21.8-R0.1-20250906.215025-55.jar),
+[adventure-api.jar](https://artifactory.papermc.io/artifactory/universe/net/kyori/adventure-api/4.24.0/adventure-api-4.24.0.jar),
+[kape2.jar](https://github.com/naruFist/kape2/releases/download/0.0.5/kape2-0.0.5.jar)
 
-- **Not tested yet**
-- **To be uploaded later**
+and direct with `plugins/kote/classpath.yml`
+
+### 2. `default-import.yml`
+this add `import` to every file.
+
+this doesn't work when writing this
+```yaml
+- "org.bukkit.*"
+- "io.github.naruFist.*"
+```
+
+instead write like this
+```yaml
+- "org.bukkit.Bukkit"
+- "org.bukkit.entity.Player"
+- "io.github.naruFist.kape2.Kape"
+- "io.github.naruFist.kote.Kote"
+```
+
+( it not works when `~.~.~.*`)
