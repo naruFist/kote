@@ -5,7 +5,7 @@ _kotlin + note_ : write plugin with kotlin. like note
 [![kotlin](https://img.shields.io/badge/kotlin-2.2.21-585DEF.svg?logo=kotlin)](http://kotlinlang.org)
 [![gradle](https://img.shields.io/badge/gradle-8.8-02303A.svg?logo=gradle)](https://gradle.org)
 
-
+`version 2.0`
 
 ## how to use?
 
